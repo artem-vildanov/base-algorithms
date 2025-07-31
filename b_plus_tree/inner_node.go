@@ -1,49 +1,29 @@
 package main
 
-import (
-	"fmt"
-	"log"
-)
+var _ Node = (*InnerNode)(nil)
 
 type InnerNode struct {
-	Keys     []int64
+	*node
 	Children []any // *Node | *Leaf
-	Parent   *InnerNode
-	setRoot func(n Node)
-	maxKeys int8
 }
 
 func NewInnerNode(
-	keys []int64, 
-	children []any, 
-	parent *InnerNode,
-	setRoot func(n Node),
-	maxKeys int8,
+	node *node,
+	children []any,
 ) *InnerNode {
 	return &InnerNode{
-		Keys:     keys,
+		node:     node,
 		Children: children,
-		Parent:   parent,
-		setRoot: setRoot,
-		maxKeys: maxKeys,
 	}
 }
 
-func (n *InnerNode) Find(searchKey int64) (any, error) {
-	leaf, err := n.findLeaf(searchKey)
-	if err != nil {
-		return nil, fmt.Errorf("Node.findLeaf: %w", err)
-	}
-
-	value, err := leaf.Find(searchKey)
-	if err != nil {
-		return nil, fmt.Errorf("LeafNode.Find: %w", err)
-	}
-
-	return value, nil
+func (n *InnerNode) Find(searchKey int64) []any {
+	leaf := n.findLeaf(searchKey)
+	value := leaf.Find(searchKey)
+	return value
 }
 
-func (n *InnerNode) findLeaf(searchKey int64) (*LeafNode, error) {
+func (n *InnerNode) findLeaf(searchKey int64) *LeafNode {
 	var node any
 
 	/*
@@ -68,19 +48,15 @@ func (n *InnerNode) findLeaf(searchKey int64) (*LeafNode, error) {
 	case *InnerNode:
 		return castedNode.findLeaf(searchKey)
 	case *LeafNode:
-		return castedNode, nil
+		return castedNode
 	default:
-		return nil, fmt.Errorf("unexpected child type: %T", castedNode)
+		// не попадем сюда
+		return nil
 	}
 }
 
 func (n *InnerNode) Insert(insertKey int64, insertValue any) {
-	leaf, err := n.findLeaf(insertKey)
-	if err != nil {
-		log.Printf("Node.findLeaf: %s", err.Error())
-		return
-	}
-
+	leaf := n.findLeaf(insertKey)
 	leaf.Insert(insertKey, insertValue)
 }
 
@@ -116,7 +92,7 @@ func (n *InnerNode) addDivider(divider int64, leftChild any, rightChild any) {
 				*/
 				n.Keys = insertAfter(n.Keys, divider, i)
 				n.Children[i] = leftChild
-				n.Children = insertAfter(n.Children, rightChild, i)
+				n.Children = insertAfter(n.Children, rightChild, i+1)
 				break
 			}
 		}
@@ -132,54 +108,56 @@ func (n *InnerNode) addDivider(divider int64, leftChild any, rightChild any) {
 	/*
 		делим узел на два
 	*/
-	leftHalf := len(n.Keys) / 2
-	rightHalf := len(n.Keys) - leftHalf
-	newDivider := n.Keys[rightHalf] // среднее значение
+	half := len(n.Keys) / 2
+	newDivider := n.Keys[half]
+	leftHalfKeys := make([]int64, half)
+	rightHalfKeys := make([]int64, half)
+
+	copy(leftHalfKeys, n.Keys[:half])
+	copy(rightHalfKeys, n.Keys[half+1:])
 
 	/*
 		если это корень - то создаем новый корень
 	*/
 	if n.isRoot() {
 		n.Parent = NewInnerNode(
-			nil, 
-			nil, 
-			nil, 
-			n.setRoot, 
-			n.maxKeys,
+			NewNode(
+				nil,
+				nil,
+				n.setRoot,
+				n.maxKeys,
+			),
+			nil,
 		)
 		n.setRoot(n.Parent)
 	}
 
 	leftNode := NewInnerNode(
-		n.Keys[:leftHalf],
-		n.Children[:leftHalf+1], // len(children) = len(keys) + 1
-		n.Parent,
-		n.setRoot,
-		n.maxKeys,
+		NewNode(
+			leftHalfKeys,
+			n.Parent,
+			n.setRoot,
+			n.maxKeys,
+		),
+		n.Children[:half+1], // len(children) = len(keys) + 1
 	)
 
 	rightNode := NewInnerNode(
-		/*
-			среднее значение не попадает в новый узел,
-			а добавляется в родителя
-		*/
-		n.Keys[rightHalf+1:],
-		n.Children[rightHalf:],
-		n.Parent,
-		n.setRoot,
-		n.maxKeys,
+		NewNode(
+			/*
+				средний ключ не попадает в новый узел,
+				а добавляется в родителя
+			*/
+			rightHalfKeys,
+			n.Parent,
+			n.setRoot,
+			n.maxKeys,
+		),
+		n.Children[half+1:],
 	)
 
 	/*
 		добавляем в родителя разделитель
 	*/
 	n.Parent.addDivider(newDivider, leftNode, rightNode)
-}
-
-func (n *InnerNode) isRoot() bool {
-	return n.Parent == nil
-}
-
-func (n *InnerNode) isOverflow() bool {
-	return len(n.Keys) > int(n.maxKeys)
 }

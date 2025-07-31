@@ -1,83 +1,60 @@
 package main
 
-import "fmt"
-
-type KeyToValue struct {
-	Key   int64
-	Value any
-}
-
-type node struct {
-	Keys    []int64
-	Parent  *InnerNode
-	setRoot func(n Node)
-	maxKeys int8
-}
-
-func (n *node) isRoot() bool {
-	return n.Parent == nil
-}
-
-func (n *node) isOverflow() bool {
-	return len(n.Keys) > int(n.maxKeys)
-}
+var _ Node = (*LeafNode)(nil)
 
 type LeafNode struct {
-	Values   []*KeyToValue
+	*node
 	NextLeaf *LeafNode
 	PrevLeaf *LeafNode
-	Parent   *InnerNode
-	setRoot  func(n Node)
-	maxKeys  int8
+	values   []any
 }
 
 func NewLeafNode(
-	parent *InnerNode,
-	values []*KeyToValue,
+	node *node,
+	values []any,
 	nextLeaf *LeafNode,
 	prevLeaf *LeafNode,
-	setRoot func(n Node),
-	maxKeys int8,
 ) *LeafNode {
 	return &LeafNode{
-		Parent:   parent,
-		Values:   values,
+		node:     node,
+		values:   values,
 		NextLeaf: nextLeaf,
 		PrevLeaf: prevLeaf,
-		setRoot:  setRoot,
-		maxKeys:  maxKeys,
 	}
 }
 
-func (l *LeafNode) Find(searchKey int64) (any, error) {
-	for _, keyToValue := range l.Values {
-		if keyToValue.Key == searchKey {
-			return keyToValue.Value, nil
+func (l *LeafNode) Find(searchKey int64) []any {
+	found := make([]any, 5)
+	for i, nodeKey := range l.Keys {
+		if nodeKey == searchKey {
+			found = append(found, l.values[i])
 		}
 	}
 
-	return nil, fmt.Errorf("not found by key: %d", searchKey)
+	return found
 }
 
 func (l *LeafNode) Insert(insertKey int64, insertValue any) {
-	newKeyToVal := &KeyToValue{
-		Key:   insertKey,
-		Value: insertValue,
-	}
-
-	if len(l.Values) == 0 {
-		l.Values = append(l.Values, newKeyToVal)
+	if len(l.Keys) == 0 {
+		l.Keys = append(l.Keys, insertKey)
+		l.values = append(l.values, insertValue)
 		return
 	}
 
-	// если больше самого правого, то вставляем в конец
-	if insertKey >= l.Values[len(l.Values)-1].Key {
-		l.Values = append(l.Values, newKeyToVal)
+	/*
+		если больше самого правого, то вставляем в конец
+	*/
+	if insertKey >= l.Keys[len(l.values)-1] {
+		l.Keys = append(l.Keys, insertKey)
+		l.values = append(l.values, insertValue)
 	} else {
-		for i, keyToVal := range l.Values {
-			if insertKey < keyToVal.Key {
-				// вставляем в отсортированный слайс
-				l.Values = insertAfter(l.Values, newKeyToVal, i)
+		/*
+			вставка в отсортированный слайс
+		*/
+		for i, nodeKey := range l.Keys {
+			if insertKey < nodeKey {
+				l.Keys = insertAfter(l.Keys, insertKey, i)
+				l.values = insertAfter(l.values, insertValue, i)
 				break
 			}
 		}
@@ -87,59 +64,77 @@ func (l *LeafNode) Insert(insertKey int64, insertValue any) {
 		return
 	}
 
-	// если не хватило места для вставки
+	/*
+		если не хватило места для вставки
+	*/
 
-	// переполненный лист делится на два листа
-	leftHalf := len(l.Values) / 2
-	rightHalf := len(l.Values) - leftHalf
+	/*
+		переполненный лист делится на два листа
+	*/
+	half := len(l.values) / 2
+	newDivider := l.Keys[half]
+
+	leftHalfKeys := make([]int64, half)
+	rightHalfKeys := make([]int64, len(l.Keys)-half)
+	leftHalfValues := make([]any, half)
+	rightHalfValues := make([]any, len(l.Keys)-half)
+
+	copy(leftHalfKeys, l.Keys[:half])
+	copy(rightHalfKeys, l.Keys[half:])
+	copy(leftHalfValues, l.values[:half])
+	copy(rightHalfValues, l.values[half:])
 
 	if l.isRoot() {
 		l.Parent = NewInnerNode(
+			NewNode(
+				nil,
+				nil,
+				l.setRoot,
+				l.maxKeys,
+			),
 			nil,
-			nil,
-			nil,
-			l.setRoot,
-			l.maxKeys,
 		)
 		l.setRoot(l.Parent)
 	}
 
 	leftLeaf := NewLeafNode(
-		l.Parent,
-		l.Values[:leftHalf],
+		NewNode(
+			leftHalfKeys,
+			l.Parent,
+			l.setRoot,
+			l.maxKeys,
+		),
+		leftHalfValues,
 		nil,
 		l.PrevLeaf,
-		l.setRoot,
-		l.maxKeys,
 	)
 
 	rightLeaf := NewLeafNode(
-		l.Parent,
-		l.Values[rightHalf:],
+		NewNode(
+			rightHalfKeys,
+			l.Parent,
+			l.setRoot,
+			l.maxKeys,
+		),
+		rightHalfValues,
 		l.NextLeaf,
 		leftLeaf,
-		l.setRoot,
-		l.maxKeys,
 	)
 
 	leftLeaf.NextLeaf = rightLeaf
 
 	// обновляем указатели в соседних листах
-	l.PrevLeaf.NextLeaf = leftLeaf
-	l.NextLeaf.PrevLeaf = rightLeaf
+	if l.PrevLeaf != nil {
+		l.PrevLeaf.NextLeaf = leftLeaf
+	}
+	if l.NextLeaf != nil {
+		l.NextLeaf.PrevLeaf = rightLeaf
+	}
 
 	// поднимаем в родителя новый разделитель
 	l.Parent.addDivider(
-		rightLeaf.Values[0].Key,
+		newDivider,
 		leftLeaf,
 		rightLeaf,
 	)
-}
-
-func (l *LeafNode) isOverflow() bool {
-	return len(l.Values) > int(l.maxKeys)
-}
-
-func (l *LeafNode) isRoot() bool {
-	return l.Parent == nil
 }
