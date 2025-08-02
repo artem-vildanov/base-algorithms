@@ -19,7 +19,12 @@ func Test_Insert(t *testing.T) {
 		tree.Insert(4, "zxcv")
 
 		expectKeys := []int64{1, 2, 3, 4}
-		expectValues := []any{"hello world", 123, false, "zxcv"}
+		expectValues := [][]any{
+			{"hello world"},
+			{123},
+			{false},
+			{"zxcv"},
+		}
 
 		casted, ok := tree.root.(*LeafNode)
 		require.Equal(t, true, ok)
@@ -50,10 +55,78 @@ func Test_Insert(t *testing.T) {
 		require.Equal(t, true, ok)
 
 		assert.Equal(t, []int64{1, 2}, leftChild.Keys)
-		assert.Equal(t, []any{"hello world", 123}, leftChild.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{"hello world"},
+				{123},
+			},
+			leftChild.values,
+		)
 
 		assert.Equal(t, []int64{3, 4, 5}, rightChild.Keys)
-		assert.Equal(t, []any{false, "zxcv", "qwer"}, rightChild.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{false},
+				{"zxcv"},
+				{"qwer"},
+			},
+			rightChild.values,
+		)
+	})
+
+	t.Run("несколько значений в одном листе", func(t *testing.T) {
+		tree := NewTree(maxKeys)
+
+		value1_1 := "first value"
+		value1_2 := "second value"
+		value2 := 123
+		value3 := false
+		value4 := "zxcv"
+		value5_1 := "qwer"
+		value5_2 := "asdfasdf"
+
+		tree.Insert(1, value1_1)
+		tree.Insert(1, value1_2)
+		tree.Insert(2, value2)
+		tree.Insert(3, value3)
+		tree.Insert(4, value4)
+		tree.Insert(5, value5_1)
+		tree.Insert(5, value5_2)
+
+		casted, ok := tree.root.(*InnerNode)
+		require.Equal(t, true, ok)
+
+		assert.Equal(t, []int64{3}, casted.Keys)
+		require.Equal(t, 2, len(casted.Children))
+
+		leftChild, ok := casted.Children[0].(*LeafNode)
+		require.Equal(t, true, ok)
+
+		rightChild, ok := casted.Children[1].(*LeafNode)
+		require.Equal(t, true, ok)
+
+		assert.Equal(t, []int64{1, 2}, leftChild.Keys)
+		assert.Equal(
+			t,
+			[][]any{
+				{value1_1, value1_2},
+				{value2},
+			},
+			leftChild.values,
+		)
+
+		assert.Equal(t, []int64{3, 4, 5}, rightChild.Keys)
+		assert.Equal(
+			t,
+			[][]any{
+				{value3},
+				{value4},
+				{value5_1, value5_2},
+			},
+			rightChild.values,
+		)
 	})
 
 	t.Run("каскадное переполнение листов и внутренних узлов", func(t *testing.T) {
@@ -73,7 +146,8 @@ func Test_Insert(t *testing.T) {
 		value3 := "hdjfgdjfg"
 		value7 := false
 		value4 := 898989
-		value5 := "zxvzxyeurty"
+		value5_1 := "zxvzxyeurty"
+		value5_2 := "zxcasdfasdf"
 
 		tree.Insert(10, value10)
 		tree.Insert(11, value11)
@@ -89,11 +163,10 @@ func Test_Insert(t *testing.T) {
 		tree.Insert(3, value3)
 		tree.Insert(7, value7)
 		tree.Insert(4, value4)
-		tree.Insert(5, value5)
+		tree.Insert(5, value5_1)
+		tree.Insert(5, value5_2)
 
-		/*
-			проверка внутренних узлов
-		*/
+		// проверка внутренних узлов
 		castedRoot, ok := tree.root.(*InnerNode)
 		require.True(t, ok)
 		require.Equal(t, 2, len(castedRoot.Children))
@@ -112,9 +185,7 @@ func Test_Insert(t *testing.T) {
 		assert.Equal(t, int64(12), castedRightChild.Keys[0])
 		assert.Equal(t, int64(15), castedRightChild.Keys[1])
 
-		/*
-			проверка листов левого узла
-		*/
+		// проверка листов левого узла
 		require.Equal(t, 3, len(castedLeftChild.Children))
 
 		gotLeftLeaf, ok := castedLeftChild.Children[0].(*LeafNode)
@@ -125,11 +196,35 @@ func Test_Insert(t *testing.T) {
 		require.True(t, ok)
 
 		assert.Equal(t, []int64{1, 2}, gotLeftLeaf.Keys)
-		assert.Equal(t, []any{value1, value2}, gotLeftLeaf.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{value1},
+				{value2},
+			},
+			gotLeftLeaf.values,
+		)
+
 		assert.Equal(t, []int64{3, 4}, gotMiddleLeaf.Keys)
-		assert.Equal(t, []any{value3, value4}, gotMiddleLeaf.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{value3},
+				{value4},
+			},
+			gotMiddleLeaf.values,
+		)
+
 		assert.Equal(t, []int64{5, 7, 8}, gotRightLeaf.Keys)
-		assert.Equal(t, []any{value5, value7, value8}, gotRightLeaf.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{value5_1, value5_2},
+				{value7},
+				{value8},
+			},
+			gotRightLeaf.values,
+		)
 
 		assert.Equal(t, (*LeafNode)(nil), gotLeftLeaf.PrevLeaf)
 		assert.Equal(t, gotLeftLeaf.NextLeaf.Keys, gotMiddleLeaf.Keys)
@@ -138,9 +233,7 @@ func Test_Insert(t *testing.T) {
 		assert.Equal(t, gotRightLeaf.PrevLeaf.Keys, gotMiddleLeaf.Keys)
 		assert.Equal(t, []int64{9, 10, 11}, gotRightLeaf.NextLeaf.Keys)
 
-		/*
-			проверка листов правого узла
-		*/
+		// проверка листов правого узла
 		require.Equal(t, 3, len(castedRightChild.Children))
 
 		gotLeftLeaf, ok = castedRightChild.Children[0].(*LeafNode)
@@ -151,13 +244,38 @@ func Test_Insert(t *testing.T) {
 		require.True(t, ok)
 
 		assert.Equal(t, []int64{9, 10, 11}, gotLeftLeaf.Keys)
-		assert.Equal(t, []any{value9, value10, value11}, gotLeftLeaf.values)
-		assert.Equal(t, []int64{12, 14}, gotMiddleLeaf.Keys)
-		assert.Equal(t, []any{value12, value14}, gotMiddleLeaf.values)
-		assert.Equal(t, []int64{15, 16, 30}, gotRightLeaf.Keys)
-		assert.Equal(t, []any{value15, value16, value30}, gotRightLeaf.values)
+		assert.Equal(
+			t,
+			[][]any{
+				{value9},
+				{value10},
+				{value11},
+			},
+			gotLeftLeaf.values,
+		)
 
-		assert.Equal(t, []int64{5,7,8}, gotLeftLeaf.PrevLeaf.Keys)
+		assert.Equal(t, []int64{12, 14}, gotMiddleLeaf.Keys)
+		assert.Equal(
+			t,
+			[][]any{
+				{value12},
+				{value14},
+			},
+			gotMiddleLeaf.values,
+		)
+
+		assert.Equal(t, []int64{15, 16, 30}, gotRightLeaf.Keys)
+		assert.Equal(
+			t,
+			[][]any{
+				{value15},
+				{value16},
+				{value30},
+			},
+			gotRightLeaf.values,
+		)
+
+		assert.Equal(t, []int64{5, 7, 8}, gotLeftLeaf.PrevLeaf.Keys)
 		assert.Equal(t, gotLeftLeaf.NextLeaf.Keys, gotMiddleLeaf.Keys)
 		assert.Equal(t, gotMiddleLeaf.PrevLeaf.Keys, gotLeftLeaf.Keys)
 		assert.Equal(t, gotMiddleLeaf.NextLeaf.Keys, gotRightLeaf.Keys)
